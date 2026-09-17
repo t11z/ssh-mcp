@@ -11,10 +11,11 @@
   "scripts": {
     "prepare": "npm run build",
     "build": "tsc && shx chmod +x build/*.js",
+    "build:mcpb": "npm run build && node scripts/build-mcpb.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "inspect": "npx @modelcontextprotocol/inspector node build/index.js",
     "changeset": "changeset",
-    "version": "changeset version && node scripts/sync-server-json.mjs",
+    "version": "changeset version && node scripts/sync-server-json.mjs && node scripts/sync-mcpb-manifest.mjs",
     "test": "cross-env SSH_MCP_DISABLE_MAIN=1 vitest --run",
     "test:unit": "cross-env SSH_MCP_DISABLE_MAIN=1 vitest --run test/unit/ test/property/",
     "test:integration": "cross-env SSH_MCP_DISABLE_MAIN=1 vitest --run test/integration/",
@@ -38,6 +39,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@anthropic-ai/mcpb": "^2.1.2",
     "@changesets/changelog-github": "^1.0.0",
     "@changesets/cli": "^3.0.1",
     "@types/node": "^26.2.0",

@@ -22,6 +22,15 @@
 npm install -g ssh-mcp
 ```
 
+**Or, for Claude Desktop:** download `ssh-mcp-<version>.mcpb` from the
+[releases page](https://github.com/tufantunc/ssh-mcp/releases) and open it. The
+bundle carries the server and its dependencies, so it needs no `npm` and no
+Node installation of your own, and the settings dialog replaces steps 3 and 4
+below. One caveat: it omits the optional `@napi-rs/keyring` native module, so
+`auth = "keychain"` profiles fall back to environment variables — see
+[Credential Resolution Order](#credential-resolution-order). Install from npm if
+you need in-process keychain reads.
+
 ### 2. Configure
 
 Without a config the server still starts, so a client or directory can complete the MCP
@@ -137,6 +146,20 @@ claude mcp add --transport stdio ssh-mcp -- ssh-mcp
   }
 }
 ```
+
+**Claude Desktop, via the `.mcpb` bundle:** nothing to edit. Open the downloaded
+file, and fill in the extension's settings. Secrets typed there are stored in
+your OS keychain by Claude Desktop and handed to the server as environment
+variables — never on a command line and never in a file you have to protect.
+Leave every field blank and the server still starts; it will refuse each tool
+call until you point it at a config file or fill in a host.
+
+The settings dialog offers seven fields: a config file path, the quick-start
+host, username, port and private-key path, and the three secrets (SSH password,
+key passphrase, sudo password). Everything else — multiple profiles, roles,
+policy rules, command quotas, the streaming file tools, OPA and OpenTelemetry —
+lives in the TOML config file that first field points at. See
+[CLI Flags](#cli-flags-v2) and [Configuration](#configuration).
 
 **Never pass passwords as CLI arguments** — they're visible via `ps aux`. Use env vars, config files, SSH agent, or OS keychain.
 
@@ -368,6 +391,14 @@ The certificate file is auto-detected using OpenSSH convention (`keyRef` + `-cer
 4. **Key file** — `keyRef` path or `SSH_MCP_KEY` env var
 
 **Never CLI arguments.** v2 removes `--password`, `--sudoPassword`, `--suPassword` entirely.
+
+**In the `.mcpb` bundle,** step 2 is unavailable: the bundle ships without
+`@napi-rs/keyring`, because that package resolves to a prebuilt native binary per
+platform and including one would make the bundle architecture-specific. A profile
+with `auth = "keychain"` prints a warning and falls through to the remaining
+sources. Little is lost in practice — Claude Desktop already stores the
+extension's secret fields in the OS keychain and passes them in as the
+`SSH_MCP_*` variables of step 3.
 
 ---
 
@@ -612,6 +643,7 @@ what decides how each is verified:
 |---|---|---|---|
 | Build provenance — [SLSA](https://slsa.dev/) Build **Level 2** | `slsa.dev/provenance/v1` | npm | every release |
 | SBOM — CycloneDX and SPDX | `cyclonedx.org/bom`, `spdx.dev/Document` | GitHub | releases after v2.4.0 |
+| MCPB bundle — build provenance | `slsa.dev/provenance/v1` | GitHub | releases after v2.9.0 |
 
 Provenance comes from npm [trusted publishing](https://docs.npmjs.com/trusted-publishers):
 the release workflow authenticates with a short-lived OIDC token and no stored credential,
@@ -632,6 +664,19 @@ store `--repo` queries. Use `https://spdx.dev/Document` for the SPDX one.
 Both SBOMs are also attached to each
 [GitHub release](https://github.com/tufantunc/ssh-mcp/releases), for reading rather than
 verifying.
+
+The `.mcpb` bundle needs its own attestation for a reason the other two do not:
+nothing else vouches for it. npm generates provenance for the tarball as part of
+publishing, but a release asset gets none — and the bundle is the more dangerous
+artifact of the two, a zip you download and a desktop application then executes.
+
+```bash
+gh attestation verify ssh-mcp-<version>.mcpb --repo tufantunc/ssh-mcp
+```
+
+No `--predicate-type` here, unlike the SBOM commands above: this one is SLSA
+provenance, which is what `gh attestation verify` looks for by default. It is
+stored in GitHub's store, which is what `--repo` queries.
 
 **Level 2, not 3.** Provenance is signed by the generic GitHub-hosted runner —
 `builder.id` is `https://github.com/actions/runner/github-hosted` — which the build itself
@@ -791,6 +836,14 @@ Secrets are **never** passed as CLI arguments.
 | `--otelEndpoint` | — | OTLP/HTTP endpoint for OpenTelemetry traces |
 | `--otelServiceName` | ssh-mcp | Service name reported on trace spans |
 | `--dumpToolHashes` | — | Print SHA-256 hashes of the tool descriptions and exit |
+
+The `.mcpb` bundle surfaces seven of these as settings fields — `--config`, the
+quick-start `--host`, `--user`, `--port` and `--key`, plus the SSH password, key
+passphrase and sudo password, which are passed as environment variables rather
+than flags. Everything else in this table is reachable only through the config
+file `--config` points at. `--transport` and `--disableApproval` are deliberately
+not offered: Claude Desktop speaks stdio, and an approval kill-switch does not
+belong behind a click-through installer.
 
 ---
 

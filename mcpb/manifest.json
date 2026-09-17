@@ -1,0 +1,176 @@
+{
+  "manifest_version": "0.3",
+  "name": "ssh-mcp",
+  "display_name": "SSH MCP — policy-gated remote access",
+  "version": "2.9.0",
+  "description": "MCP server exposing policy-gated, audited SSH access for Linux and Windows hosts via the Model Context Protocol.",
+  "long_description": "Runs commands, sessions and SFTP transfers on remote hosts behind a role-based policy engine and an approval gate. Destructive and privileged commands are classified and gated rather than trusted. Secrets are never passed as command-line arguments. Configure a single host in the fields below, or point at a TOML config file for multiple profiles, roles, policy rules, command quotas, tamper-evident audit and OpenTelemetry traces. See the README for the full flag and configuration reference.",
+  "author": {
+    "name": "tufantunc",
+    "url": "https://github.com/tufantunc"
+  },
+  "homepage": "https://github.com/tufantunc/ssh-mcp#readme",
+  "documentation": "https://github.com/tufantunc/ssh-mcp#readme",
+  "support": "https://github.com/tufantunc/ssh-mcp/issues",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tufantunc/ssh-mcp.git"
+  },
+  "license": "MIT",
+  "keywords": [
+    "ssh",
+    "mcp",
+    "model-context-protocol",
+    "server",
+    "windows",
+    "linux",
+    "automation",
+    "remote"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "server/launch.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/launch.mjs"
+      ],
+      "env": {
+        "SSH_MCP_CONFIG": "${user_config.config_file}",
+        "SSH_MCP_HOST": "${user_config.host}",
+        "SSH_MCP_USER": "${user_config.user}",
+        "SSH_MCP_PORT": "${user_config.port}",
+        "SSH_MCP_KEY_PATH": "${user_config.key_path}",
+        "SSH_MCP_KEY": "${user_config.key_path}",
+        "SSH_MCP_PASSWORD": "${user_config.password}",
+        "SSH_MCP_PASSPHRASE": "${user_config.passphrase}",
+        "SSH_MCP_SUDO_PASSWORD": "${user_config.sudo_password}"
+      }
+    }
+  },
+  "user_config": {
+    "config_file": {
+      "type": "file",
+      "title": "Config file (TOML)",
+      "description": "Path to an ssh-mcp config.toml. Leave blank to use the platform config directory. A config file is required for multiple profiles, roles, policy rules and the streaming file tools (transferRoot).",
+      "required": false
+    },
+    "host": {
+      "type": "string",
+      "title": "Host (quick start)",
+      "description": "Single-host quick start. Ignored when a config file is used.",
+      "required": false
+    },
+    "user": {
+      "type": "string",
+      "title": "Username (quick start)",
+      "description": "SSH username for the quick-start host.",
+      "required": false
+    },
+    "port": {
+      "type": "number",
+      "title": "Port",
+      "description": "SSH port for the quick-start host.",
+      "default": 22,
+      "min": 1,
+      "max": 65535,
+      "required": false
+    },
+    "key_path": {
+      "type": "file",
+      "title": "Private key file",
+      "description": "Path to the private key. The path, never the key material.",
+      "required": false
+    },
+    "password": {
+      "type": "string",
+      "title": "SSH password",
+      "description": "Prefer an SSH agent or a key. Stored in your OS keychain and passed to the server as an environment variable, never on the command line.",
+      "sensitive": true,
+      "required": false
+    },
+    "passphrase": {
+      "type": "string",
+      "title": "Key passphrase",
+      "description": "Passphrase for the private key above, if it has one.",
+      "sensitive": true,
+      "required": false
+    },
+    "sudo_password": {
+      "type": "string",
+      "title": "Sudo password",
+      "description": "Used by privileged-command when the policy allows the privileged class. Piped via stdin, never visible in the process list.",
+      "sensitive": true,
+      "required": false
+    }
+  },
+  "tools_generated": false,
+  "tools": [
+    {
+      "name": "list-connections",
+      "description": "Discover available hosts and connection status."
+    },
+    {
+      "name": "list-sessions",
+      "description": "List active sessions per host."
+    },
+    {
+      "name": "open-session",
+      "description": "Create a named interactive (stateful) or background session."
+    },
+    {
+      "name": "close-session",
+      "description": "Close a session, signalling a background session's command first."
+    },
+    {
+      "name": "read-session-output",
+      "description": "Read output from background sessions."
+    },
+    {
+      "name": "read-command",
+      "description": "Execute allowlisted read-only commands."
+    },
+    {
+      "name": "run-command",
+      "description": "Execute arbitrary commands, gated by the approval policy."
+    },
+    {
+      "name": "privileged-command",
+      "description": "Execute with sudo, gated by the approval policy."
+    },
+    {
+      "name": "sftp-upload",
+      "description": "Upload a file via SFTP."
+    },
+    {
+      "name": "sftp-download",
+      "description": "Download a file via SFTP."
+    },
+    {
+      "name": "sftp-list",
+      "description": "List a remote directory, bounded in entries and bytes."
+    },
+    {
+      "name": "sftp-upload-file",
+      "description": "Stream a local file to the remote host, never through model context."
+    },
+    {
+      "name": "sftp-download-file",
+      "description": "Stream a remote file to local disk, never through model context."
+    },
+    {
+      "name": "signal-process",
+      "description": "Send INT/TERM/KILL to a remote PID."
+    }
+  ],
+  "compatibility": {
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "node": ">=20.6.0"
+    }
+  }
+}

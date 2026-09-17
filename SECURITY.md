@@ -224,6 +224,32 @@ Treat the ability to open an interactive session as the privilege it is:
    automatically. There the finding is reported rather than enforced — `--strictConfigAcl`
    enforces it if you want that.
 
+### The `.mcpb` bundle
+
+The bundle installed through Claude Desktop is the same server with the same
+defaults, running as the desktop user — with that user's SSH agent socket, key
+files and network reach. It is not a sandbox, and the profile it connects as is
+whatever the settings or config file name. Everything above still applies.
+
+Two properties are worth stating for that channel specifically:
+
+- **Secrets never reach a command line.** Fields marked sensitive are stored in
+  the OS keychain by the host and handed over as environment variables, which is
+  the third step of [Credential Resolution Order](./README.md#credential-resolution-order).
+  The bundle passes no user setting as an argument.
+- **The approval gate fails closed.** If the client cannot be asked — it does not
+  implement MCP elicitation, or the prompt is not answered in time — the command
+  is refused rather than allowed. A host without elicitation support therefore
+  refuses every `privileged-command` and every `run-command` classified
+  destructive, until a config file sets `approvalPolicy = "auto"` for that
+  profile. Setting it to get past a refusal disables the gate; decide that
+  deliberately, not by trial and error.
+
+The bundle omits the optional `@napi-rs/keyring` module, so `auth = "keychain"`
+profiles fall back to environment variables with a warning. That is a
+functionality difference, not a weakening: the secret is still held in the OS
+keychain, by the host rather than by this process.
+
 ## Supported Versions
 
 | Version | Supported |
