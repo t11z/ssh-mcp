@@ -88,6 +88,37 @@ Secrets never take that path. `SSH_MCP_PASSWORD`, `SSH_MCP_PASSPHRASE`,
 by the credential resolver and must not become arguments — they would be visible
 in the process list, which is why v2 removed the flags that used to accept them.
 
+## The CLI is not a dependency
+
+`scripts/build-mcpb.mjs` calls `npx --yes @anthropic-ai/mcpb@2.1.2` rather than
+depending on the package. That was a devDependency first, and it had to come
+back out.
+
+Adding it changed `npm sbom --package-lock-only --omit=dev` from 167 components
+to 154, dropping `zod` — a direct production dependency — along with twelve
+others. The CLI carries its own `zod@3` for `mcpb init`'s interactive prompts,
+nested under the project's `zod@4`. Runtime resolution stays correct; `npm ls
+zod` shows the nesting and ci.yml checks it. But npm's SBOM walker mis-attributes
+the shared entries once they are reachable from a dev dependency, and omits them
+under `--omit=dev`. That SBOM is signed, attached to every release and promised
+in the README, so one that does not list `zod` is not an acceptable trade for a
+lockfile pin.
+
+Removing it also drops a high-severity advisory that arrived through the same
+prompt library (`@inquirer/editor` → `external-editor` → `tmp`), on a code path
+nothing here ever reaches — `init` is interactive and this script only calls
+`validate` and `pack`.
+
+The exact version is the pin. A published npm version is immutable, so `@2.1.2`
+resolves to one tarball forever; it is the same bargain the `registry` workflow
+job makes when it downloads a pinned `mcp-publisher` and verifies its digest
+instead of depending on it. The cost: packing a bundle needs the network on a
+machine that has not run this before, so `npm ci` alone is no longer enough to
+build one offline.
+
+If you bump the version, bump it in the script — there is one constant,
+`MCPB_CLI`.
+
 ## Versioning
 
 `mcpb/manifest.json` carries the version, and `scripts/sync-mcpb-manifest.mjs`

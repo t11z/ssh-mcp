@@ -39,7 +39,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@anthropic-ai/mcpb": "^2.1.2",
     "@changesets/changelog-github": "^1.0.0",
     "@changesets/cli": "^3.0.1",
     "@types/node": "^26.2.0",

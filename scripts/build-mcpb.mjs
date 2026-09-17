@@ -181,15 +181,39 @@ step(`  ${Object.keys(JSON.parse(hashesFromRepo)).length} tool hashes match the 
 
 // ------------------------------------------------------------------------ pack
 
-const mcpb = at('node_modules', '.bin', 'mcpb');
+/**
+ * Fetched by exact version rather than carried as a devDependency, which is what
+ * this was at first. Measured: adding `@anthropic-ai/mcpb` to devDependencies
+ * changed the output of `npm sbom --package-lock-only --omit=dev` from 167
+ * components to 154, dropping `zod` — a direct production dependency — along
+ * with twelve others. The CLI brings its own `zod@3` for `mcpb init`'s
+ * interactive prompts, nested under the project's `zod@4`; runtime resolution
+ * stays correct (`npm ls zod` confirms it, and ci.yml checks it), but npm's SBOM
+ * walker mis-attributes the shared entries and omits them under `--omit=dev`.
+ *
+ * That SBOM is signed and attached to every release, and the README promises it.
+ * One that does not list zod is worse than wrong, so the dependency does not go
+ * in the tree. Dropping it also removes a high-severity advisory that arrived
+ * through the same prompt library (`@inquirer/editor` -> `external-editor` ->
+ * `tmp`), on a code path nothing here ever reaches.
+ *
+ * Pinned to an exact version, not a range: a published npm version is immutable,
+ * so `@2.1.2` resolves to one tarball forever. It is the same bargain the
+ * `registry` workflow job makes when it downloads a pinned `mcp-publisher` and
+ * verifies its digest rather than depending on it. The cost is that this script
+ * needs the network on a machine that has not run it before; `npm ci` alone is
+ * no longer enough to pack a bundle offline.
+ */
+const MCPB_CLI = '@anthropic-ai/mcpb@2.1.2';
+const mcpb = (...args) => run('npx', ['--yes', MCPB_CLI, ...args]);
 const out = at('dist', `ssh-mcp-${version}.mcpb`);
 
-step('validating the manifest');
-run(mcpb, ['validate', join(stage, 'manifest.json')]);
+step(`validating the manifest (${MCPB_CLI})`);
+mcpb('validate', join(stage, 'manifest.json'));
 
 step('packing');
 rmSync(out, { force: true });
-run(mcpb, ['pack', stage, out]);
+mcpb('pack', stage, out);
 
 const bytes = statSync(out).size;
 const sha256 = createHash('sha256').update(readFileSync(out)).digest('hex');
