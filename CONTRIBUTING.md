@@ -45,6 +45,12 @@ This creates a file in `.changeset/` — commit it with your PR. When the PR mer
 
 `server.json` is the MCP registry entry. Its two version fields — the listing's own `version`, and the npm version it points at — are written by `npm run version` from `package.json`, so they arrive already bumped in the "Version Packages" PR and should not be edited by hand. Everything else in the file is hand-maintained; if you change the `title` or `description`, note that the registry schema caps both at 100 characters, which `test/unit/sync-server-json.test.ts` asserts.
 
+### mcpb/manifest.json
+
+`mcpb/manifest.json` describes the `.mcpb` bundle attached to each release. Its `version` is written by `npm run version` from `package.json`, like `server.json`'s, and should not be edited by hand. The rest is hand-maintained, and two parts of it are asserted against the code in `test/unit/mcpb-manifest.test.ts`: the `tools` array must match `TOOL_DESCRIPTIONS` in `src/tools/descriptions.ts` exactly, and every `sensitive` field must map to an environment variable `src/config/credential-resolver.ts` actually reads. **If you add or rename a tool, add or rename its line here too** — the manifest promises the list is complete, and the host shows it before installing.
+
+Build the bundle with `npm run build:mcpb`. It validates the manifest, packs into `dist/`, and drives the staged server to prove the bundle's own dependency tree resolves; CI runs the same script on every PR. `docs/mcpb-bundle.md` covers the layout and the ways it breaks quietly.
+
 ## Review Criteria
 
 The `.review-pro/` directory holds the criteria this project's changes are reviewed against — `node/` for general Node.js server concerns (security, correctness, API contracts, tests, performance), and `ssh-mcp/` for signals specific to this codebase: progress and cancellation, OTEL, the HTTP rate limit, ProxyJump, CA certificates, and MCP resources.

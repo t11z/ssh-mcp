@@ -55,6 +55,29 @@ jobs:
       - name: Typecheck (src + tests)
         run: npm run typecheck
 
+      # The MCPB bundle, built on every pull request rather than only at release
+      # time.
+      #
+      # Its three failure modes are all invisible until someone installs the
+      # artifact: a manifest the MCPB schema rejects, a dependency that resolves
+      # through the repo's hoisted node_modules but not through the bundle's
+      # `--omit=dev --omit=optional` tree, and a staged package.json that lost
+      # `"type": "module"` and turns every emitted file into CommonJS. The
+      # release job is the wrong place to find any of them out: npm versions are
+      # immutable, so a bundle discovered broken there has to be completed by
+      # dispatch rather than fixed by a re-run.
+      #
+      # build-mcpb.mjs validates the manifest and drives the staged server with
+      # --dumpToolHashes, which returns before any config is read — so this costs
+      # one production-only install and no SSH server. The --check is separate
+      # because a stale version is the one problem whose remedy is a one-line
+      # command rather than a diagnosis.
+      - name: MCPB manifest is in sync
+        run: node scripts/sync-mcpb-manifest.mjs --check
+
+      - name: Build and smoke-test the MCPB bundle
+        run: node scripts/build-mcpb.mjs
+
       # docker compose rather than `services:`, because two of the test servers
       # build from local Dockerfiles (Alpine/busybox-ash and Dropbear) and one
       # mounts an init script — none of which a service container can express.

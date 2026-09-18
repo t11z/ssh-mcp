@@ -115,9 +115,11 @@ jobs:
       #
       # Before merging one, confirm exactly that: the PR touches only
       # package.json's version, CHANGELOG.md, server.json's two version fields
-      # (written by `npm run version` — see scripts/sync-server-json.mjs) and
-      # the consumed changeset files, and main is green at the commit it sits
-      # on. An admin merge of anything wider is skipping a real check.
+      # (written by `npm run version` — see scripts/sync-server-json.mjs),
+      # mcpb/manifest.json's version (same script, see
+      # scripts/sync-mcpb-manifest.mjs) and the consumed changeset files, and
+      # main is green at the commit it sits on. An admin merge of anything wider
+      # is skipping a real check.
       - name: Create Release Pull Request or Publish
         id: changesets
         # v2, because the CLI is v3. The two are a matched pair and the action
@@ -387,6 +389,158 @@ jobs:
           # copies were missing.
           gh release upload "$tag" sbom.cdx.json sbom.spdx.json --clobber --repo "$GITHUB_REPOSITORY"
 
+  # The MCPB bundle: a zip of the built server, its production dependencies and a
+  # manifest, which Claude Desktop installs in one click. Attached to each
+  # release, because that is the only place a desktop user can get it — npm
+  # serves the package, not an installable extension.
+  #
+  # Three jobs rather than one, split exactly where the sbom pair is split and
+  # for a sharper version of the same reason. The comment on `sbom` names the
+  # hazard: npm's trusted publisher is bound to a workflow *filename*, so any job
+  # in this file holding `id-token: write` can mint a token npm would accept for
+  # ssh-mcp. That job defends itself by installing nothing — `npm sbom
+  # --package-lock-only` reads the lockfile and runs no lifecycle script. This
+  # one cannot make that claim: a bundle without node_modules is not a bundle, so
+  # it has to run `npm ci` over third-party code. So it holds no id-token at all,
+  # and `--ignore-scripts` in build-mcpb.mjs is the second layer. Signing happens
+  # next door, in a job whose every step is a pinned first-party action operating
+  # on a file that already exists.
+  mcpb:
+    name: build the MCPB bundle
+    needs: release
+    # The same gate as `sbom`, including the `list_only` arm and for the same
+    # reason: `published` is set only after the changesets action has pushed the
+    # tag and created the release, so a failure in either leaves a version on npm
+    # that this workflow would otherwise never revisit — and re-running `release`
+    # cannot fix it, because `changeset publish` finds the version already there
+    # and reports `published: false` forever.
+    if: >-
+      ${{ !cancelled()
+      && github.ref == 'refs/heads/main'
+      && (needs.release.outputs.published == 'true'
+      || github.event.inputs.list_only == 'true') }}
+    runs-on: ubuntu-latest
+    permissions:
+      # Read only, deliberately. See the comment above: this is the job that runs
+      # third-party install code, so it is the job that must be unable to mint
+      # anything.
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.x'
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # Validates the manifest, installs production dependencies into a staging
+      # tree, packs, and then drives the staged server with --dumpToolHashes —
+      # which returns before any config is read, so it needs no SSH server while
+      # still proving the whole import graph resolves against the bundle's own
+      # node_modules. It refuses to pack a manifest whose version disagrees with
+      # package.json, and refuses a staged tree containing a .node binary, which
+      # would quietly make this artifact platform-specific.
+      - name: Pack
+        run: node scripts/build-mcpb.mjs
+
+      # Recorded here rather than re-derived downstream, for the reason `sbom`
+      # records its own: main can move between jobs, and the tag this bundle
+      # belongs to is the one it was built from.
+      - name: Record the release tag for the asset job
+        run: echo "v$(node -p 'require("./package.json").version')" > release-tag.txt
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mcpb
+          path: |
+            dist/ssh-mcp-*.mcpb
+            release-tag.txt
+          retention-days: 7
+
+  # The signing half. Nothing else vouches for this file: npm's trusted
+  # publishing generates provenance for the tarball automatically, but a release
+  # asset gets none — and this is the more dangerous artifact of the two, a zip a
+  # user downloads and a desktop application then executes.
+  mcpb-attest:
+    name: attest the MCPB bundle
+    needs: mcpb
+    if: ${{ !cancelled() && needs.mcpb.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      # Held here and not in the job above, which is the whole point of the
+      # split. Every step in this job is a pinned first-party action acting on a
+      # file that already exists; no dependency is installed and no lifecycle
+      # script runs.
+      id-token: write
+      attestations: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: mcpb
+
+      # attest-build-provenance rather than the bare `actions/attest` the SBOM
+      # jobs use: the claim here is "this repository built this file", which is
+      # what SLSA provenance says and what `gh attestation verify` looks for by
+      # default. The SBOM jobs need the bare action because they are attaching a
+      # predicate of their own.
+      - name: Attest build provenance for the bundle
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ssh-mcp-*.mcpb
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mcpb-attested
+          path: |
+            ssh-mcp-*.mcpb
+            release-tag.txt
+          retention-days: 7
+
+  # And the attaching half, split off so that `contents: write` never sits in the
+  # same job as `id-token: write` — the arrangement `sbom-assets` documents.
+  mcpb-assets:
+    name: attach the MCPB bundle to the release
+    needs: mcpb-attest
+    # `!cancelled()` with an explicit result check, not a bare `needs`. Skips
+    # propagate transitively past a direct `needs:` — measured on the 2.7.0
+    # recovery dispatch, where `sbom` succeeded and `sbom-assets` was skipped
+    # anyway because `release` upstream of it had been skipped. The result check
+    # is what keeps this from running after a *failed* attest job, where
+    # release-tag.txt does not exist and `cat` would fail on a missing file
+    # instead of reporting the real problem upstream.
+    #
+    # Indexed rather than dotted, because the job name has a hyphen in it and
+    # `needs.mcpb-attest.result` parses as a subtraction — `needs.mcpb` minus
+    # `attest.result` — which evaluates to NaN, compares false against
+    # 'success', and skips this job on every run without ever erroring. The
+    # existing `needs.sbom.result` above is safe only because that name has no
+    # hyphen.
+    if: ${{ !cancelled() && needs['mcpb-attest'].result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: mcpb-attested
+
+      - name: Upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="$(cat release-tag.txt)"
+          # `--repo` for the reason sbom-assets carries it: this job downloads
+          # artifacts and never checks out, so there is no git remote for `gh` to
+          # infer the repository from. Without it the 2.4.1 upload died with
+          # "fatal: not a git repository".
+          gh release upload "$tag" ssh-mcp-*.mcpb --clobber --repo "$GITHUB_REPOSITORY"
+
   # Listing on the official MCP registry (registry.modelcontextprotocol.io).
   #
   # A job rather than more steps on `release`, because npm versions are
@@ -639,7 +793,7 @@ jobs:
   # `sync-server-json --check`.
   verify-release:
     name: verify the release is complete
-    needs: [release, sbom-assets, registry]
+    needs: [release, sbom-assets, mcpb-assets, registry]
     # `!cancelled()` and explicit `needs` results rather than a bare condition,
     # for the reason written out on `sbom-assets`: skips propagate past a direct
     # `needs`, and this job must report on a `list_only` dispatch — where
@@ -663,7 +817,7 @@ jobs:
       # something in it depends on the bundled npm; nothing here does, and a
       # toolchain this job does not need is a toolchain that can break it.
       #
-      # Five checks, and all five run before any of them fails the job. A
+      # Six checks, and all six run before any of them fails the job. A
       # checker that exits on the first problem turns one broken release into
       # several rounds of fix-and-rerun, which is the opposite of what this is
       # for — the point is to say, once, everything that is missing.
@@ -712,12 +866,15 @@ jobs:
               echo "  ok   GitHub release $tag is published"
             fi
 
-            # 4. Both SBOMs, under the names sbom-assets uploads. The README
-            # promises an SBOM on every release after v2.4.0, and v2.4.1 shipped
-            # without one because the upload failed after the attestation had
-            # already been signed — a split this file makes on purpose, and the
-            # exact kind of partial success nothing was checking for.
-            for asset in sbom.cdx.json sbom.spdx.json; do
+            # 4. Both SBOMs and the MCPB bundle, under the names their asset
+            # jobs upload. The README promises an SBOM on every release after
+            # v2.4.0, and v2.4.1 shipped without one because the upload failed
+            # after the attestation had already been signed — a split this file
+            # makes on purpose, and the exact kind of partial success nothing was
+            # checking for. The bundle is split the same way and can fail the
+            # same way; it also carries the version in its filename, so unlike
+            # the two SBOMs it cannot be a fixed string.
+            for asset in sbom.cdx.json sbom.spdx.json "ssh-mcp-$version.mcpb"; do
               if jq -e --arg a "$asset" 'any(.assets[]; .name == $a)' <<<"$release" >/dev/null; then
                 echo "  ok   $asset is attached to $tag"
               else

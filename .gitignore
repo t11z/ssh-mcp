@@ -161,3 +161,8 @@ sonar-project.properties
 
 # Agent worktrees, created by review tooling.
 .claude/worktrees/
+
+# MCPB bundles. build-mcpb.mjs writes both the staging tree and the packed file
+# under dist/, which is already ignored above; this covers a bundle packed
+# anywhere else by hand.
+*.mcpb
