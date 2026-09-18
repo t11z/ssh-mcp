@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "ssh-mcp",
   "display_name": "SSH MCP — policy-gated remote access",
-  "version": "2.9.0",
+  "version": "2.10.0",
   "description": "MCP server exposing policy-gated, audited SSH access for Linux and Windows hosts via the Model Context Protocol.",
   "long_description": "Runs commands, sessions and SFTP transfers on remote hosts behind a role-based policy engine and an approval gate. Destructive and privileged commands are classified and gated rather than trusted. Secrets are never passed as command-line arguments. Configure a single host in the fields below, or point at a TOML config file for multiple profiles, roles, policy rules, command quotas, tamper-evident audit and OpenTelemetry traces. See the README for the full flag and configuration reference.",
   "author": {
